@@ -1,0 +1,10 @@
+# protobufjs arrives through @univerjs/protocol -> @grpc/grpc-js, which backs
+# Univer's collaboration features. This app never enables those, and both the
+# test suite and the release build are green without its postinstall ever
+# running — so it stays unbuilt rather than executing an install script we have
+# no use for.
+#
+# This has to be answered either way: pnpm fails the install outright while the
+# question is open, which takes `pnpm tauri build` down with it.
+allowBuilds:
+  protobufjs: false

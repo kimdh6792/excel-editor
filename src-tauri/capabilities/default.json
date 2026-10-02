@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window. The fs permissions carry no static path scope on purpose: tauri-plugin-dialog calls allow_file on the runtime fs scope for whatever the user picks, and the fs plugin checks that runtime scope alongside the static one — so the app reaches exactly the files the user chose and nothing else.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file"
+  ]
+}

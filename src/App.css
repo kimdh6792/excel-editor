@@ -1,0 +1,232 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard',
+    'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ------------------------------------------------------------------ toolbar */
+
+.toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  background: #f5f5f7;
+  border-bottom: 1px solid #d9d9de;
+}
+
+.toolbar button {
+  padding: 4px 11px;
+  font: inherit;
+  color: #1d1d1f;
+  background: #fff;
+  border: 1px solid #c6c6cc;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: #ececf0;
+}
+
+.toolbar button:disabled {
+  color: #9a9aa0;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------ recent menu */
+
+.recent {
+  position: relative;
+  display: flex;
+}
+
+/* Sits under the menu but over everything else, so a click anywhere closes it. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.recent-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 220px;
+  max-width: 420px;
+  max-height: 60vh;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #c6c6cc;
+  border-radius: 7px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+
+.recent-menu li {
+  display: flex;
+}
+
+.recent-menu button {
+  flex: 1;
+  overflow: hidden;
+  padding: 5px 8px;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.recent-menu button:hover {
+  background: #ececf0;
+}
+
+/* ------------------------------------------------------------------ status */
+
+.backup {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: 2px;
+  color: #5a5a60;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.backup input {
+  margin: 0;
+}
+
+.filename {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: 8px;
+  overflow: hidden;
+  color: #3a3a3f;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  color: #3f6b3f;
+  font-size: 11px;
+  font-weight: 600;
+  background: #e4f1e4;
+  border-radius: 4px;
+}
+
+.dot {
+  margin-right: 4px;
+  color: #d1861b;
+}
+
+.busy {
+  margin-left: auto;
+  color: #6a6a70;
+}
+
+/* ------------------------------------------------------------------ warning */
+
+.warning {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  color: #6b4700;
+  background: #fff6d8;
+  border-bottom: 1px solid #ecd9a0;
+}
+
+.warning button {
+  margin-left: auto;
+  padding: 2px 8px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentcolor;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+/* --------------------------------------------------------------------- grid */
+
+/* Univer measures its canvas against this element, so it needs a real size. */
+.grid {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .toolbar {
+    background: #2c2c30;
+    border-bottom-color: #46464c;
+  }
+
+  .toolbar button {
+    color: #ececf0;
+    background: #3a3a40;
+    border-color: #55555c;
+  }
+
+  .toolbar button:hover:not(:disabled) {
+    background: #46464c;
+  }
+
+  .toolbar button:disabled {
+    color: #7a7a82;
+  }
+
+  .filename {
+    color: #d8d8de;
+  }
+
+  .backup {
+    color: #adadb5;
+  }
+
+  .badge {
+    color: #bfe0bf;
+    background: #2f452f;
+  }
+
+  .recent-menu {
+    background: #35353b;
+    border-color: #55555c;
+  }
+
+  .recent-menu button:hover {
+    background: #46464c;
+  }
+}
