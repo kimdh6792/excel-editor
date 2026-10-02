@@ -33,16 +33,27 @@ import {
   noteSaved,
   pickAndReadFile,
   pickSavePath,
+  printWindow,
   readFileAt,
   recentList,
   setWindowTitle,
   writeFileAt,
 } from './fs/file';
 import type { OpenedFile, RecentEntry } from './fs/file';
+import { DEFAULT_PRINT_SETTINGS, MAX_REPEAT_HEADER_ROWS } from './print/options';
+import type { PrintArea, PrintSettings } from './print/options';
 import './App.css';
 
 const APP_NAME = 'Excel Editor';
 const BACKUP_PREFERENCE_KEY = 'excel-editor.backup-on-save';
+const PRINT_PREFERENCE_KEY = 'excel-editor.print-settings';
+
+/**
+ * Row count past which a print gets a confirmation first. Nothing breaks above
+ * it, but a 30,000-row CSV is several hundred pages and is more likely a
+ * mis-click than an intention.
+ */
+const PRINT_ROW_WARNING = 2000;
 
 /**
  * The parsers are about a megabyte and are only needed once a file is opened or
@@ -51,6 +62,7 @@ const BACKUP_PREFERENCE_KEY = 'excel-editor.backup-on-save';
 const loadXlsx = () =>
   Promise.all([import('./xlsx/import'), import('./xlsx/export'), import('./xlsx/inspect')]);
 const loadCsv = () => import('./csv/convert');
+const loadPrint = () => Promise.all([import('./print/collect'), import('./print/html')]);
 
 
 /**
@@ -97,6 +109,12 @@ interface DocState {
 
 const UNTITLED: DocState = { name: '제목 없음', format: 'xlsx', warningAcknowledged: true };
 
+const PRINT_AREAS: Array<[PrintArea, string]> = [
+  ['sheet', '현재 시트'],
+  ['selection', '선택한 영역'],
+  ['all', '모든 시트'],
+];
+
 function readBackupPreference(): boolean {
   try {
     // Default on: saving is lossy for anything the converter does not model, so
@@ -104,6 +122,18 @@ function readBackupPreference(): boolean {
     return localStorage.getItem(BACKUP_PREFERENCE_KEY) !== 'off';
   } catch {
     return true;
+  }
+}
+
+function readPrintSettings(): PrintSettings {
+  try {
+    const stored = localStorage.getItem(PRINT_PREFERENCE_KEY);
+    if (!stored) return DEFAULT_PRINT_SETTINGS;
+    // Spread over the defaults rather than trusting the parse: a settings shape
+    // from an older version must not leave a field undefined.
+    return { ...DEFAULT_PRINT_SETTINGS, ...(JSON.parse(stored) as Partial<PrintSettings>) };
+  } catch {
+    return DEFAULT_PRINT_SETTINGS;
   }
 }
 
@@ -120,6 +150,8 @@ export default function App() {
   const calculatingRef = useRef(false);
   /** Timestamp of the last workbook load, for the settle window. */
   const loadedAtRef = useRef(0);
+  /** Holds the print-only rendering of the sheet; empty except while printing. */
+  const printRootRef = useRef<HTMLDivElement>(null);
 
   const [doc, setDoc] = useState<DocState>(UNTITLED);
   const [dirty, setDirty] = useState(false);
@@ -128,6 +160,8 @@ export default function App() {
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [recentOpen, setRecentOpen] = useState(false);
   const [backupOnSave, setBackupOnSave] = useState(readBackupPreference);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(readPrintSettings);
 
   /* ----------------------------------------------------------- univer setup */
 
@@ -179,6 +213,11 @@ export default function App() {
 
     listenerRef.current?.dispose();
     listenerRef.current = null;
+
+    // The previous document's print rendering outlives its own print run (the
+    // dialog is still up when the command returns), so drop it here rather than
+    // let a ⌘P after an open print the file that was on screen before.
+    if (printRootRef.current) printRootRef.current.innerHTML = '';
 
     if (unitIdRef.current) api.disposeUnit(unitIdRef.current);
 
@@ -232,6 +271,14 @@ export default function App() {
       // A locked-down storage is not worth failing the toggle over.
     }
   }, [backupOnSave]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PRINT_PREFERENCE_KEY, JSON.stringify(printSettings));
+    } catch {
+      // A locked-down storage is not worth failing the toggle over.
+    }
+  }, [printSettings]);
 
   /* ----------------------------------------------------------------- open */
 
@@ -494,12 +541,68 @@ export default function App() {
     setDoc(UNTITLED);
   }, [confirmDiscard, loadSnapshot]);
 
+  /* ---------------------------------------------------------------- print */
+
+  /**
+   * Renders the sheet as an HTML table and hands the document to the system
+   * print dialog.
+   *
+   * The on-screen grid is a canvas, which prints as the pixels in the viewport —
+   * one cropped page. So printing swaps in a separate rendering built from the
+   * workbook model, which `@media print` shows and the grid hides. That markup
+   * has to stay in the DOM afterwards: the dialog is window-modal and still open
+   * when the command returns, so tearing it down here would print nothing.
+   */
+  const print = useCallback(async () => {
+    const workbook = apiRef.current?.getActiveWorkbook();
+    const root = printRootRef.current;
+    if (!workbook || !root) return;
+
+    setPrintOpen(false);
+    setBusy('인쇄 준비 중…');
+    try {
+      // Same reason as saving: a cell being typed into has not reached the model,
+      // and printing without this would miss what the user just entered.
+      if (workbook.isCellEditing()) await workbook.endEditingAsync(true);
+
+      const [{ collectPrintSheets }, { buildPrintHtml }] = await loadPrint();
+      const sheets = collectPrintSheets(workbook, printSettings.area);
+      if (sheets.length === 0) {
+        await alertDialog('인쇄할 내용이 없습니다.', '인쇄');
+        return;
+      }
+
+      const rows = sheets.reduce((total, sheet) => total + sheet.rows.length, 0);
+      if (rows > PRINT_ROW_WARNING) {
+        const go = await confirmDialog(
+          `인쇄 범위가 ${rows.toLocaleString('ko-KR')}행입니다. 수백 페이지가 나올 수 있습니다.\n\n계속할까요?`,
+          '인쇄',
+        );
+        if (!go) return;
+      }
+
+      root.innerHTML = buildPrintHtml(sheets, printSettings);
+      // Let the insertion land in the render tree before the native print
+      // operation reads the document.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await printWindow();
+    } catch (error) {
+      await alertDialog(
+        `인쇄에 실패했습니다.\n\n${error instanceof Error ? error.message : String(error)}`,
+        '인쇄 실패',
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [printSettings]);
+
   /* ------------------------------------------------------------- shortcuts */
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setRecentOpen(false);
+        setPrintOpen(false);
         return;
       }
       if (!(event.metaKey || event.ctrlKey)) return;
@@ -514,6 +617,13 @@ export default function App() {
       } else if (key === 'n') {
         event.preventDefault();
         void newFile();
+      } else if (key === 'p') {
+        // Opens the options rather than printing straight away: what gets printed
+        // depends on the range and the header rows, and those are worth a look
+        // before a hundred pages come out.
+        event.preventDefault();
+        setRecentOpen(false);
+        setPrintOpen((open) => !open);
       }
     };
     // Capture phase: Univer binds its own handlers on the grid and would
@@ -565,7 +675,10 @@ export default function App() {
           <div className="recent">
             <button
               type="button"
-              onClick={() => setRecentOpen((open) => !open)}
+              onClick={() => {
+                setPrintOpen(false);
+                setRecentOpen((open) => !open);
+              }}
               disabled={disabled || recent.length === 0}
               aria-expanded={recentOpen}
               title={recent.length === 0 ? '최근 파일 없음' : '최근 파일'}
@@ -600,6 +713,91 @@ export default function App() {
         <button type="button" onClick={() => void saveAs()} disabled={disabled}>
           다른 이름으로
         </button>
+
+        <div className="print">
+          <button
+            type="button"
+            onClick={() => {
+              setRecentOpen(false);
+              setPrintOpen((open) => !open);
+            }}
+            disabled={disabled}
+            aria-expanded={printOpen}
+            title="인쇄 (⌘P)"
+          >
+            인쇄 ▾
+          </button>
+          {printOpen && (
+            <>
+              {/* Click-away layer, same as the recent menu. */}
+              <div className="scrim" onClick={() => setPrintOpen(false)} />
+              <div className="print-menu" role="group" aria-label="인쇄 설정">
+                <p className="print-label">범위</p>
+                {PRINT_AREAS.map(([value, label]) => (
+                  <label key={value}>
+                    <input
+                      type="radio"
+                      name="print-area"
+                      checked={printSettings.area === value}
+                      onChange={() => setPrintSettings((prev) => ({ ...prev, area: value }))}
+                    />
+                    {label}
+                  </label>
+                ))}
+
+                <p className="print-label">모양</p>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={printSettings.gridlines}
+                    onChange={(event) =>
+                      setPrintSettings((prev) => ({ ...prev, gridlines: event.target.checked }))
+                    }
+                  />
+                  눈금선 인쇄
+                </label>
+                <label title="열 너비 비율은 그대로 두고 전체 폭을 용지에 맞춥니다">
+                  <input
+                    type="checkbox"
+                    checked={printSettings.fitToWidth}
+                    onChange={(event) =>
+                      setPrintSettings((prev) => ({ ...prev, fitToWidth: event.target.checked }))
+                    }
+                  />
+                  한 페이지 폭에 맞춤
+                </label>
+                <label className="print-repeat">
+                  맨 위
+                  <input
+                    type="number"
+                    min={0}
+                    max={MAX_REPEAT_HEADER_ROWS}
+                    value={printSettings.repeatHeaderRows}
+                    onChange={(event) =>
+                      setPrintSettings((prev) => ({
+                        ...prev,
+                        // An emptied field reports NaN, which must not become the
+                        // stored value or the input can never be typed into again.
+                        repeatHeaderRows: Number.isFinite(event.target.valueAsNumber)
+                          ? Math.min(
+                              Math.max(0, Math.trunc(event.target.valueAsNumber)),
+                              MAX_REPEAT_HEADER_ROWS,
+                            )
+                          : 0,
+                      }))
+                    }
+                  />
+                  행을 페이지마다 반복
+                </label>
+
+                <p className="print-note">용지·방향·부수와 “PDF로 저장”은 다음 창에서 고릅니다.</p>
+                <button type="button" className="print-go" onClick={() => void print()}>
+                  인쇄…
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         <label className="backup" title="저장하기 전에 원본을 name.bak.xlsx 로 복사합니다">
           <input
@@ -638,6 +836,14 @@ export default function App() {
       )}
 
       <div className="grid" ref={containerRef} />
+
+      {/*
+        The printable rendering of the sheet. Empty on screen and hidden by CSS;
+        `@media print` hides the toolbar, the warning and the grid instead and
+        shows this. Filled in by `print()` and deliberately left in place
+        afterwards, because the print dialog is still open when it returns.
+      */}
+      <div className="print-root" ref={printRootRef} aria-hidden="true" />
     </div>
   );
 }

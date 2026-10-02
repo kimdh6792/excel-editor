@@ -1,4 +1,5 @@
 mod pending;
+mod print;
 mod recent;
 
 use tauri::{Emitter, Manager};
@@ -41,6 +42,7 @@ pub fn run() {
         .manage(PendingOpens::default())
         .invoke_handler(tauri::generate_handler![
             pending::frontend_ready,
+            print::print_page,
             recent::recent_list,
             recent::record_recent,
             recent::grant_recent,

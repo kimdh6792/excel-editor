@@ -244,6 +244,25 @@ export async function alertDialog(message: string, title: string): Promise<void>
   await show(message, { title, kind: 'error' });
 }
 
+/**
+ * Opens the system print dialog for the current window.
+ *
+ * JavaScript's `window.print()` is a silent no-op inside WKWebView, so under
+ * Tauri this has to go through Rust — see `src-tauri/src/print.rs`. In a plain
+ * browser the DOM call is the real thing.
+ *
+ * Resolves once the dialog is up, not once printing has finished, so whatever
+ * the page is meant to print must still be in the DOM afterwards.
+ */
+export async function printWindow(): Promise<void> {
+  if (!isTauri) {
+    window.print();
+    return;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('print_page');
+}
+
 export async function setWindowTitle(title: string): Promise<void> {
   if (!isTauri) {
     document.title = title;

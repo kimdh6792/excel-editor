@@ -106,6 +106,73 @@ body,
   background: #ececf0;
 }
 
+/* ------------------------------------------------------------- print menu */
+
+.print {
+  position: relative;
+  display: flex;
+}
+
+.print-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 260px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #c6c6cc;
+  border-radius: 7px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+
+.print-menu label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.print-menu input[type='radio'],
+.print-menu input[type='checkbox'] {
+  margin: 0;
+}
+
+.print-label {
+  margin: 4px 0 0;
+  color: #6a6a70;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.print-label:first-child {
+  margin-top: 0;
+}
+
+.print-repeat input {
+  width: 48px;
+  padding: 2px 4px;
+  font: inherit;
+  text-align: right;
+}
+
+.print-note {
+  margin: 6px 0 0;
+  color: #6a6a70;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.print-go {
+  margin-top: 4px;
+  font-weight: 600;
+}
+
 /* ------------------------------------------------------------------ status */
 
 .backup {
@@ -188,6 +255,108 @@ body,
   min-height: 0;
 }
 
+/* ----------------------------------------------------------------- printing */
+
+/*
+ * The grid is a canvas, so printing it directly yields whatever pixels happen to
+ * be in the viewport — one page, cropped. `print()` in App.tsx instead renders
+ * the sheet as an HTML table into `.print-root`, and the rules below are what put
+ * that on paper: the app shell steps aside and the table becomes the document.
+ *
+ * Pagination, paper size, orientation and scaling past "fit to width" are the
+ * system print dialog's job, not this stylesheet's.
+ */
+.print-root {
+  display: none;
+}
+
+@media print {
+  /* The app sizes itself to the window and clips; a document has to be free to
+     run as long as it needs. */
+  html,
+  body,
+  #root {
+    height: auto;
+    overflow: visible;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  /* Univer mounts dialogs and tooltips into portals outside the React root, and
+     an open one would otherwise print alongside the sheet. */
+  body > *:not(#root) {
+    display: none !important;
+  }
+
+  .app {
+    display: block;
+    height: auto;
+  }
+
+  /* Everything in the shell, listed rather than hidden wholesale, so the print
+     container can stay a child of `.app`. */
+  .toolbar,
+  .warning,
+  .grid {
+    display: none !important;
+  }
+
+  .print-root {
+    display: block;
+  }
+
+  .print-sheet + .print-sheet {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .print-sheet h2 {
+    margin: 0 0 6px;
+    font-size: 11pt;
+  }
+
+  .print-table {
+    border-collapse: collapse;
+    /* Column widths come from the sheet, so they must not be renegotiated to
+       fit the content. */
+    table-layout: fixed;
+    font-size: 10pt;
+    /* Without this WebKit drops cell fills, which carry much of a sheet's meaning. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Repeats the header rows at the top of every page. */
+  .print-table thead {
+    display: table-header-group;
+  }
+
+  .print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-table td {
+    padding: 1px 3px;
+    /* A value too wide for its column is clipped rather than spilling over the
+       neighbour, since there is no horizontal pagination to spill into. */
+    overflow: hidden;
+    /* Excel's default. Cell styles override it rather than set it. */
+    vertical-align: bottom;
+    /* `pre` keeps the line breaks inside a cell without wrapping anything else;
+       a wrapped cell overrides this inline. */
+    white-space: pre;
+    /* The app follows the system appearance, but paper is always light. */
+    color: #000;
+  }
+
+  .print-table.gridlines td {
+    border: 1px solid #c8c8c8;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   .toolbar {
     background: #2c2c30;
@@ -221,12 +390,29 @@ body,
     background: #2f452f;
   }
 
-  .recent-menu {
+  .recent-menu,
+  .print-menu {
     background: #35353b;
     border-color: #55555c;
   }
 
   .recent-menu button:hover {
     background: #46464c;
+  }
+
+  .print-menu {
+    color: #ececf0;
+  }
+
+  .print-label,
+  .print-note {
+    color: #a8a8b0;
+  }
+
+  .print-repeat input {
+    color: #ececf0;
+    background: #2c2c30;
+    border: 1px solid #55555c;
+    border-radius: 4px;
   }
 }
